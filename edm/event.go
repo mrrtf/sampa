@@ -1,4 +1,4 @@
-package main
+package edm
 
 import (
 	"encoding/binary"
@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
-
-	"github.com/aphecetche/bitset"
 )
 
-type eventHeaderType struct {
+type EventHeaderType struct {
 	EventSize         uint32
 	EventMagic        uint32
 	HeaderSize        uint32
@@ -27,43 +25,43 @@ type eventHeaderType struct {
 	TimeStampMicroSec uint32
 }
 
-type eventDataType []byte
+type EventDataType []uint32
 
 // EventType is a simple DATE event = header + payload
 type EventType struct {
-	header  eventHeaderType
-	payload eventDataType
+	header  EventHeaderType
+	payload EventDataType
 }
 
-func (event EventType) data() eventDataType {
-	if !event.hasPayload() {
+func (event EventType) Data() EventDataType {
+	if !event.HasPayload() {
 		return nil
 	}
-	return event.payload[40:]
+	return event.payload[10:]
 }
 
-func (event EventType) hasPayload() bool {
+func (event EventType) HasPayload() bool {
 	return event.header.EventSize > uint32(binary.Size(event.header)) &&
-		len(event.payload) > 40
+		len(event.payload) > 10
 }
 
 // start of packet (SOP = 0 0 0x1)
-func (event EventType) sop() (eventDataType, error) {
-	var s eventDataType
-	if !event.hasPayload() {
+func (event EventType) SOP() (EventDataType, error) {
+	var s EventDataType
+	if !event.HasPayload() {
 		return nil, nil
 	}
-	s = event.payload[28:40]
-	asExpected := binary.LittleEndian.Uint32(s[:4]) == 0 &&
-		binary.LittleEndian.Uint32(s[4:8]) == 0 &&
-		binary.LittleEndian.Uint32(s[8:]) == 1
+	s = event.payload[7:10]
+	asExpected := s[0] == 0 &&
+		s[1] == 0 &&
+		s[2] == 1
 	if !asExpected {
 		return s, errors.New("unexpected sop")
 	}
 	return s, nil
 }
 
-func (h eventHeaderType) String() string {
+func (h EventHeaderType) String() string {
 
 	v := fmt.Sprintf("%s ", blue("eveSize "))
 	v += fmt.Sprintf("%08X", h.EventSize)
@@ -101,14 +99,14 @@ func (h eventHeaderType) String() string {
 	return v
 }
 
-func (buf eventDataType) String(perline int) string {
+func (buf EventDataType) String(perline int) string {
 	v := ""
 	offset := 0
 	m := len(buf)
 	for offset < m {
 		for b := 0; b < perline && offset < m; b++ {
-			v += fmt.Sprintf("%02X%02X%02X%02X ", buf[offset+3], buf[offset+2], buf[offset+1], buf[offset])
-			offset += 4
+			v += fmt.Sprintf("%08X ", buf[offset])
+			offset++
 		}
 		v += "\n"
 	}
@@ -118,29 +116,30 @@ func (buf eventDataType) String(perline int) string {
 func (event EventType) String() string {
 	v := event.header.String()
 	v += "\n---\n"
-	if event.hasPayload() {
-		v += blue("payload  ") + event.payload[0:28].String(7)
+
+	if event.HasPayload() {
+		v += blue("payload  ") + event.payload[0:7].String(7)
 		v += "***\n"
-		sop, err := event.sop()
+		sop, err := event.SOP()
 		if err == nil && sop != nil {
 			v += blue("sop      " + sop.String(3))
-			size := len(event.payload[40:]) / 3 / 4
+			size := len(event.payload[10:]) / 3
 			if size != 8192 {
 				// this test is probably valid only for the SOLAR tests
 				log.Printf(red("Was expecting %d bytes, got %d"), 8192, size)
 			}
 		} else if sop != nil {
 			v += red("sop      " + sop.String(3))
-			v += red("extra\n" + event.payload[40:80].String(5))
+			v += red("extra\n" + event.payload[10:20].String(5))
 		}
 	}
 	return v
 }
 
 // GetEvent returns the next DATE event found in reader
-func getEvent(r io.Reader) (event EventType, err error) {
+func GetEvent(r io.Reader) (event EventType, err error) {
 	const magic uint32 = 0xDA1E5AFE
-	var header eventHeaderType
+	var header EventHeaderType
 	var headerSize = int64(binary.Size(header))
 	err = binary.Read(r, binary.LittleEndian, &header)
 	if err != nil {
@@ -156,61 +155,13 @@ func getEvent(r io.Reader) (event EventType, err error) {
 		return EventType{header: header, payload: nil}, nil
 	}
 
-	buf := make([]byte, int64(header.EventSize)-headerSize)
+	buf := make([]uint32, (int64(header.EventSize)-headerSize)/4)
 
-	n, err := r.Read(buf)
+	err = binary.Read(r, binary.LittleEndian, buf)
 
 	if err != nil {
 		return EventType{}, err
 	}
 
-	if n != len(buf) {
-		log.Fatal("Could not read full event")
-	}
 	return EventType{header: header, payload: buf}, nil
-}
-
-var bs0 = bitset.NewBitSet(1024)
-
-func GBTword(data eventDataType) (*bitset.BitSet, error) {
-
-	if len(data) != 12 {
-		return nil, errors.New("3 32-bits words expected")
-	}
-	bs := bitset.NewBitSet(80)
-
-	return bs, nil
-}
-
-func processEvent(event EventType) {
-	fmt.Println(event)
-
-	if !event.hasPayload() {
-		return
-	}
-
-	// sop, err := event.sop()
-	_, err := event.sop()
-
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	fmt.Println("would treat the data here")
-	n := 5
-
-	fmt.Println(event.data()[:72].String(3))
-
-	for i := 0; i < n; i++ {
-
-		bs, err := GBTword(event.data()[i : i+12])
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(bs)
-
-	}
-
-	fmt.Println()
 }

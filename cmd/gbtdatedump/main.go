@@ -5,15 +5,13 @@ import (
 	"log"
 	"os"
 
+	"github.com/aphecetche/sampa/edm"
 	"github.com/fatih/color"
 )
 
 var flagMaxNofEvents int
 var flagNoColor bool
 
-var yellow = color.New(color.FgYellow).SprintFunc()
-var blue = color.New(color.FgBlue).SprintFunc()
-var red = color.New(color.FgRed).SprintFunc()
 var nevents = 0
 
 func init() {
@@ -45,13 +43,13 @@ func main() {
 	var nevents int
 
 	for {
-		event, err := getEvent(file)
+		event, err := edm.GetEvent(file)
 		if err != nil {
 			break
 		}
 		nevents++
 
-		processEvent(event)
+		edm.ProcessEvent(event)
 
 		if flagMaxNofEvents > 0 && nevents >= flagMaxNofEvents {
 			break
