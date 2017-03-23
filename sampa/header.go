@@ -1,4 +1,4 @@
-// package edm describes the Sampa data format
+// package sampa describes the Sampa data format
 //
 // SampaDataHeader is the fixed length SAMPA header (50 bits)
 //
@@ -17,7 +17,7 @@
 // https://svnweb.cern.ch/cern/wsvn/SAMPA/docs/SAMPA%20Specification%20MPW3/sampa.pdf
 // in particular table 2.5
 
-package edm
+package sampa
 
 import (
 	"errors"
@@ -142,15 +142,34 @@ func (sdh *SampaDataHeader) DP() bool {
 	return sdh.Get(DPBit)
 }
 
+func (sdh *SampaDataHeader) StringAnnotated(sep string) string {
+	s := fmt.Sprintf("Hamming %d 0b%b 0x%X", sdh.Hamming(), sdh.Hamming(), sdh.Hamming())
+	s += sep
+	s += fmt.Sprintf("P        %v", sdh.P())
+	s += sep
+	s += fmt.Sprintf("PKT      %d 0b%b 0x%X", sdh.PKT(), sdh.PKT(), sdh.PKT())
+	s += sep
+	s += fmt.Sprintf("NumWords %d 0b%b 0x%X", sdh.NumWords(), sdh.NumWords(), sdh.NumWords())
+	s += sep
+	s += fmt.Sprintf("Hadd     %d 0b%b 0x%X", sdh.Hadd(), sdh.Hadd(), sdh.Hadd())
+	s += sep
+	s += fmt.Sprintf("CHadd    %d 0b%b 0x%X", sdh.CHadd(), sdh.CHadd(), sdh.CHadd())
+	s += sep
+	s += fmt.Sprintf("BXcount  %d 0b%b 0x%X", sdh.BXcount(), sdh.BXcount(), sdh.BXcount())
+	s += sep
+	s += fmt.Sprintf("DP       %v", sdh.DP())
+	return s
+}
+
 const (
-	DataPKT                         uint = 4
-	DataNumWordsPKT                 uint = 5
-	DataTriggerTooEarlyPKT          uint = 6
-	DataTriggerTooEarlyNumWordsPKT  uint = 7
 	HeartBeatPKT                    uint = 0
 	DataTruncatedPKT                uint = 1
 	SyncPKT                         uint = 2
 	DataTruncatedTriggerTooEarlyPKT uint = 3
+	DataPKT                         uint = 4
+	DataNumWordsPKT                 uint = 5
+	DataTriggerTooEarlyPKT          uint = 6
+	DataTriggerTooEarlyNumWordsPKT  uint = 7
 )
 
 var SyncPattern SampaDataHeader
@@ -172,6 +191,6 @@ func init() {
 	if sp != 0x1555540F00113 {
 		log.Fatal(fmt.Sprintf("SyncPattern expected to be 0x1555540F00113 but is %x", sp))
 	}
-	fmt.Printf("SYNC is assumed to be %X = %s\n", SyncPattern.Uint64(0, -1),
-		SyncPattern.String())
+	fmt.Printf("SYNC is assumed to be %X = %s ; count=%d\n", SyncPattern.Uint64(0, -1),
+		SyncPattern.String(), SyncPattern.Count())
 }
