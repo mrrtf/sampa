@@ -1,0 +1,6 @@
+*.prof
+*.svg
+vim-*
+*.test
+*toto*
+*titi*
