@@ -2,12 +2,15 @@ package date
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 
 	"github.com/fatih/color"
+)
+
+const (
+	maxPayloadSize = 1024 * 1024
 )
 
 var yellow = color.New(color.FgYellow).SprintFunc()
@@ -45,81 +48,56 @@ type EventType struct {
 	size    int // used size of payload
 }
 
-func (event EventType) Header() EventHeaderType {
+func NewEvent() *EventType {
+	return &EventType{
+		header:  EventHeaderType{},
+		payload: make([]byte, maxPayloadSize),
+		size:    0}
+}
+
+func (event *EventType) Header() EventHeaderType {
 	return event.header
 }
 
-func (event EventType) Data32() EventDataType {
-	if !event.HasPayload() {
-		return nil
-	}
-	return event.payload32[10:]
+func (event *EventType) OnlyHeader(header EventHeaderType) {
+	event.header = header
+	event.size = 0
 }
 
-func (event EventType) Data() []byte {
+func (event *EventType) Data() []byte {
 	if !event.HasPayload() {
 		return nil
 	}
 	return event.payload[40:]
 }
 
-func (event EventType) HasPayload32() bool {
-	return event.header.EventSize > headerSize &&
-		(len(event.payload32) > 10)
-}
-
-func (event EventType) HasPayload() bool {
+func (event *EventType) HasPayload() bool {
 	return event.header.EventSize > headerSize &&
 		(len(event.payload) > 40)
 }
 
-// start of packet (SOP = 0 0 0x1)
-func (event EventType) SOP32() (EventDataType, error) {
-	var s EventDataType
-	if !event.HasPayload() {
-		return nil, nil
-	}
-	s = event.payload32[7:10]
-	asExpected := s[0] == 0 &&
-		s[1] == 0 &&
-		s[2] == 1
-	if !asExpected {
-		return s, errors.New("unexpected sop")
-	}
-	return s, nil
-}
-
 // Triplets converts the bytes starting at payload[pos]
 // into 3 32-bits values
-func (event EventType) triplet(pos int) (uint32, uint32, uint32) {
-	x := event.Data()[pos : pos+12]
-	return binary.LittleEndian.Uint32(x[0:4]), binary.LittleEndian.Uint32(x[4:8]), binary.LittleEndian.Uint32(x[4:12])
+func (event *EventType) triplet(pos int) (uint32, uint32, uint32) {
+	x := event.payload[pos : pos+12]
+	return binary.LittleEndian.Uint32(x[0:4]), binary.LittleEndian.Uint32(x[4:8]), binary.LittleEndian.Uint32(x[8:12])
 }
 
 // start of packet (SOP = 0x000000000000000000000001)
-func (event EventType) SOP() ([]byte, error) {
+func (event *EventType) SOP() ([]byte, error) {
 	if !event.HasPayload() {
 		return nil, nil
 	}
-	// a,b,c := event.triplet(28)
-	s := event.payload[28:40]
-
-	asExpected := (s[3] == 1)
-
-	for i := 0; i < 12 && i != 3 && asExpected; i++ {
-		if s[i] != 0 {
-			asExpected = false
-		}
+	a, b, c := event.triplet(28)
+	if a != 0 || b != 0 || c != 1 {
+		return event.payload[28:40], errors.New(fmt.Sprintf("unexpected sop %08X %08X %08X", a, b, c))
 	}
-	if !asExpected {
-		hex.Dump(s)
-		return s, errors.New("unexpected sop")
-	}
-	return s, nil
+	return event.payload[28:40], nil
 }
+
 func (h EventHeaderType) String() string {
 
-	v := fmt.Sprintf("%s ", blue("eveSize "))
+	v := fmt.Sprintf("\n%s ", blue("eveSize "))
 	v += fmt.Sprintf("%08X", h.EventSize)
 	v += fmt.Sprintf(" %s ", blue("magic   "))
 	v += fmt.Sprintf("%08X", h.EventMagic)
@@ -155,20 +133,6 @@ func (h EventHeaderType) String() string {
 	return v
 }
 
-func (buf EventDataType) String(perline int) string {
-	v := ""
-	offset := 0
-	m := len(buf)
-	for offset < m {
-		for b := 0; b < perline && offset < m; b++ {
-			v += fmt.Sprintf("%08X ", buf[offset])
-			offset++
-		}
-		v += "\n"
-	}
-	return v
-}
-
 func StringPerLine(buf []byte, perline int) string {
 	v := ""
 	offset := 0
@@ -186,37 +150,16 @@ func StringPerLine(buf []byte, perline int) string {
 
 var nbadsop = 0
 
-func (event EventType) String() string {
+func (event *EventType) String() string {
 	v := event.header.String()
 	v += "\n---\n"
 
-	if event.HasPayload32() {
-		v += blue("payload  ") + event.payload32[0:7].String(7)
-		v += "***\n"
-		sop32, err := event.SOP32()
-		if err == nil && sop32 != nil {
-			v += blue("sop      " + sop32.String(3))
-			size := len(event.payload32[10:]) / 3
-			if size != 8192 {
-				// this test is probably valid only for the SOLAR tests
-				log.Printf(red("Was expecting %d bytes, got %d"), 8192, size)
-			}
-		} else if sop32 != nil {
-			v += red("sop      " + sop32.String(3))
-			v += red("extra\n" + event.payload32[10:20].String(5))
-		}
-	}
-
 	if event.HasPayload() {
 		sop, err := event.SOP()
-		a, b, c := event.triplet(0)
-		v += "data=\n"
-		v += red(StringPerLine(event.Data()[0:80], 5))
-		v += yellow(fmt.Sprintf("%08X %08X %08X\n", a, b, c))
-		v += hex.EncodeToString(sop)
+		v += blue("SOP ") + StringPerLine(sop, 3)
 		if err != nil {
 			nbadsop++
-			if nbadsop > 3 {
+			if nbadsop > 10 {
 				log.Fatal(err)
 			}
 		}

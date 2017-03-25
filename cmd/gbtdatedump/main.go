@@ -2,19 +2,24 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"runtime/pprof"
 
-	"github.com/aphecetche/bitset"
-	"github.com/aphecetche/sampa/date"
-	"github.com/aphecetche/sampa/sampa"
+	"github.com/aphecetche/sampa/pkg/bitset"
+	"github.com/aphecetche/sampa/pkg/date"
+	"github.com/aphecetche/sampa/pkg/sampa"
 	"github.com/fatih/color"
 )
 
 var flagMaxGBTwords int
 var flagNoColor bool
 var flagCpuProfile string
+var flagMemProfile string
+var flagMaxEvents int
 
 var NumberOfProcessedEvents int = 0
 var elinks []sampa.Payload
@@ -30,11 +35,13 @@ func init() {
 	gbt = bitset.New(80)
 	inData = false
 	nextCheckPoint = 0
-	flag.IntVar(&flagMaxGBTwords, "n", -1, "max number of GBT words to read")
+	flag.IntVar(&flagMaxGBTwords, "nw", 0, "max number of GBT words to read")
+	flag.IntVar(&flagMaxEvents, "n", 0, "max number of DATE events to read")
 	flag.BoolVar(&flagNoColor, "no-color", false, "Disable color output")
 	flag.StringVar(&flagCpuProfile, "cpuprofile", "", "write cpu profile to file")
+	flag.StringVar(&flagMemProfile, "memprofile", "", "write memory profile to this file")
 	log.SetFlags(log.Llongfile)
-	// log.SetOutput(ioutil.Discard)
+	log.SetOutput(ioutil.Discard)
 }
 
 func main() {
@@ -56,16 +63,44 @@ func main() {
 	}
 	inputFileName := flag.Args()[0]
 	r := date.NewReader(inputFileName)
+	defer func() {
+		fmt.Printf("Happy ending. I've read %d events.",
+			r.NofEvents())
+	}()
 	if r == nil {
 		log.Fatal("cannot read file", inputFileName)
 	}
 	log.Println("Reading from ", inputFileName)
 	s := 0
-	for n := 0; n < flagMaxGBTwords || flagMaxGBTwords < 0; n++ {
-		g, err := r.GBT()
-		s += g.Size()
-		if err != nil {
+	for n := 0; ; {
+		if flagMaxGBTwords > 0 && n >= flagMaxGBTwords {
 			break
+		}
+		if flagMaxEvents > 0 && r.NofEvents() >= flagMaxEvents {
+			break
+		}
+		g, err := r.GBT()
+		n++
+		s += g.Size() // just to use g for the momemt
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			if err == date.ErrEmptyEvent ||
+				err == date.ErrInvalidSOP ||
+				err == date.ErrEndOfEvent {
+				continue
+			}
+			log.Fatal(err)
+		}
+		if n > 100000 && flagMemProfile != "" {
+			f, err := os.Create(flagMemProfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.WriteHeapProfile(f)
+			f.Close()
+			return
 		}
 	}
 }

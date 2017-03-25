@@ -1,6 +1,6 @@
 package gbt
 
-import "github.com/aphecetche/bitset"
+import "github.com/aphecetche/sampa/pkg/bitset"
 
 // Word is a 80-bits bitset
 type Word struct {

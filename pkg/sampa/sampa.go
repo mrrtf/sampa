@@ -3,7 +3,7 @@ package sampa
 import (
 	"fmt"
 
-	"github.com/aphecetche/bitset"
+	"github.com/aphecetche/sampa/pkg/bitset"
 )
 
 // Cluster describes a Sampa cluster, i.e. a set of

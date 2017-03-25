@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/aphecetche/bitset"
+	"github.com/aphecetche/sampa/pkg/bitset"
 )
 
 const (
