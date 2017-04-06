@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/mrrtf/sampa.png?branch=master)](https://travis-ci.org/mrrtf/sampa)
+[![Build Status](https://travis-ci.org/mrrtf/sampa.svg?branch=master)](https://travis-ci.org/mrrtf/sampa)
 
 sampa is Go decoder of Alice MCH Sampa front-end
 
