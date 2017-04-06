@@ -4,15 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"runtime/pprof"
 
-	"github.com/aphecetche/sampa/pkg/bitset"
-	"github.com/aphecetche/sampa/pkg/date"
-	"github.com/aphecetche/sampa/pkg/sampa"
 	"github.com/fatih/color"
+	"github.com/mrrtf/sampa/pkg/bitset"
+	"github.com/mrrtf/sampa/pkg/date"
+	"github.com/mrrtf/sampa/pkg/sampa"
 )
 
 var flagMaxGBTwords int
@@ -22,14 +21,14 @@ var flagMemProfile string
 var flagMaxEvents int
 
 var NumberOfProcessedEvents int = 0
-var elinks []sampa.Payload
+var elinks []sampa.ELink
 var gbt *bitset.BitSet
 var inData bool
 var nextCheckPoint int
 
 func init() {
 	for i := 0; i < 40; i++ {
-		elinks = append(elinks, sampa.Payload{BitSet: *(bitset.New(100000))})
+		elinks = append(elinks, sampa.NewELink())
 	}
 	log.Println(len(elinks), "elinks created")
 	gbt = bitset.New(80)
@@ -41,7 +40,7 @@ func init() {
 	flag.StringVar(&flagCpuProfile, "cpuprofile", "", "write cpu profile to file")
 	flag.StringVar(&flagMemProfile, "memprofile", "", "write memory profile to this file")
 	log.SetFlags(log.Llongfile)
-	log.SetOutput(ioutil.Discard)
+	// log.SetOutput(ioutil.Discard)
 }
 
 func main() {
@@ -64,36 +63,47 @@ func main() {
 	inputFileName := flag.Args()[0]
 	r := date.NewReader(inputFileName)
 	defer func() {
-		fmt.Printf("Happy ending. I've read %d events.",
-			r.NofEvents())
+		fmt.Printf("Happy ending. I've read %d events and %d GBT words\n",
+			r.NofEvents(), r.NofGBTwords())
 	}()
 	if r == nil {
 		log.Fatal("cannot read file", inputFileName)
 	}
 	log.Println("Reading from ", inputFileName)
-	s := 0
-	for n := 0; ; {
-		if flagMaxGBTwords > 0 && n >= flagMaxGBTwords {
+	ten := make([]byte, 10)
+	for {
+		if flagMaxGBTwords > 0 && r.NofGBTwords() >= flagMaxGBTwords {
 			break
 		}
 		if flagMaxEvents > 0 && r.NofEvents() >= flagMaxEvents {
 			break
 		}
-		g, err := r.GBT()
-		n++
-		s += g.Size() // just to use g for the momemt
+		n, err := r.Read(ten)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			if err == date.ErrEmptyEvent ||
-				err == date.ErrInvalidSOP ||
-				err == date.ErrEndOfEvent {
+			if err == date.ErrEndOfEvent {
+				// fmt.Println(r)
+				for _, e := range elinks {
+					e.Clear()
+				}
 				continue
 			}
 			log.Fatal(err)
 		}
-		if n > 100000 && flagMemProfile != "" {
+		if n != 10 {
+			log.Fatalf("Could not read the expected 10 bytes, but %d ones", n)
+		}
+		if len(ten) != n {
+			log.Fatalf("inconsistent slice returned : size is %d while I was expecting %d", len(ten), n)
+		}
+		err = sampa.Dispatch(ten, elinks)
+		if err != nil {
+			log.Printf("ten size is %d", len(ten))
+			log.Fatal(err)
+		}
+		if r.NofGBTwords() > 100000 && flagMemProfile != "" {
 			f, err := os.Create(flagMemProfile)
 			if err != nil {
 				log.Fatal(err)

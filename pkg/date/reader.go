@@ -8,8 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-
-	"github.com/aphecetche/sampa/pkg/gbt"
 )
 
 var (
@@ -27,10 +25,11 @@ const (
 // DateReader is meant to read GBT words from a DATE
 // file. It is implementing the gbt.GBT interface
 type DateReader struct {
-	r       io.Reader
-	event   *EventType
-	pos     int
-	gbtword gbt.Word
+	r     io.Reader
+	event *EventType
+	pos   int
+	// gbtword gbt.Word
+	gbt     []byte
 	headBuf []byte
 	header  EventHeaderType
 	nevents int
@@ -45,38 +44,55 @@ func NewReader(filename string) *DateReader {
 		log.Println(err)
 		return nil
 	}
-	return &DateReader{r: bufio.NewReaderSize(file, readingBufferSize), event: NewEvent(), pos: -1, gbtword: *gbt.NewWord(), headBuf: make([]byte, headerSize), nevents: 0, ngbt: 0}
-	// 	return &DateReader{r: file, event: NewEvent(), pos: -1, gbtword: *gbt.NewWord(), headBuf: make([]byte, headerSize), nevents: 0, ngbt: 0}
+	return &DateReader{r: bufio.NewReaderSize(file, readingBufferSize), event: NewEvent(), pos: -1, gbt: make([]byte, 10), headBuf: make([]byte, headerSize), nevents: 0, ngbt: 0}
 }
 
-func (dr *DateReader) NofEvents() int {
-	return dr.nevents
+// Read reads 10 bytes from the underlying stream
+// FIXME: this is not really satisfying the Read interface
+// (e.g. we really expect p to be of len 10, nothing else...)
+func (dr *DateReader) Read(p []byte) (n int, err error) {
+	if len(p) != 10 {
+		log.Fatal("DateReader.Read method is so far only able to deal with 10 bytes slices")
+	}
+	for {
+		err = dr.NextGBT()
+		if err == io.EOF {
+			return 0, err
+		}
+		if err == nil {
+			copy(p, dr.gbt)
+			return len(dr.gbt), nil
+		}
+		if err == ErrEndOfEvent {
+			return 0, err
+		}
+	}
 }
 
-// GBT returns a single 80-bit GBT word (and nil) or an
-// empty word and an error (e.g. to signal EOF or any other
-// reason)
-// The DATE events without payload or with incorrect start
-// of (sampa) packet are simply skipped
-func (dr *DateReader) GBT() (g gbt.Word, err error) {
+// NextGBT advances to the next 10 bytes representing a single 80-bit GBT word
+// and fills the gbt internal slice with those
+//
+// Note that the DATE events without payload or with incorrect start
+// of (sampa) packet are simply skipped by NextGBT
+func (dr *DateReader) NextGBT() (err error) {
 
 	if dr.pos < 0 {
 		err = dr.GetNextEvent()
 		if err != nil {
-			return gbt.Word{}, err
+			return err
 		}
 		dr.nevents++
 		// log.Println(dr)
 		if !dr.event.HasPayload() {
 			// skip to next event
 			// log.Println("Event without payload. Skipping")
-			return gbt.Word{}, ErrEmptyEvent
+			return ErrEmptyEvent
 		}
 		_, err := dr.event.SOP()
 		if err != nil {
 			// invalid SOP, skip to next event
 			// log.Println("Event with invalid SOP. Skipping")
-			return gbt.Word{}, ErrInvalidSOP
+			return ErrInvalidSOP
 		}
 		dr.pos = 0
 		dr.ngbt++
@@ -86,34 +102,59 @@ func (dr *DateReader) GBT() (g gbt.Word, err error) {
 	if dr.pos+3 >= dr.event.size {
 		// log.Println("EOE reached. Going to next event")
 		dr.pos = -1
-		return gbt.Word{}, ErrEndOfEvent
+		return ErrEndOfEvent
 	}
 
 	dr.Data2GBT(dr.pos)
 	// log.Println("GBT from data=", dr.gbtword.StringLSBRight())
 	dr.pos += 3 * 4
-	return dr.gbtword, nil
+
+	if len(dr.gbt) != 10 {
+		log.Fatal("dr.gbt is not of size 10")
+	}
+	return nil
 }
 
-func Data2GBT(data []byte, g *gbt.Word) {
-	d := []byte{
-		data[8],
-		data[9],
-		data[10],
-		data[11],
-		data[4],
-		data[5],
-		data[6],
-		data[7],
-		data[0],
-		data[1]}
-	g.SetFromBytes(d)
+func (dr *DateReader) Data2GBTHelper(gbt []byte, data []byte) {
+	gbt[0] = data[8]
+	gbt[1] = data[9]
+	gbt[2] = data[10]
+	gbt[3] = data[11]
+	gbt[4] = data[4]
+	gbt[5] = data[5]
+	gbt[6] = data[6]
+	gbt[7] = data[7]
+	gbt[8] = data[0]
+	gbt[9] = data[1]
 }
 
-// GBTword convert 3 32-bits (DATE) words into a 80-bits bitset
+// Data2GBT converts 3 32-bits (DATE) words into a 80-bits GBT word
+// represented by a slice of 10 bytes
 func (dr *DateReader) Data2GBT(pos int) {
-	Data2GBT(dr.event.Data()[pos:pos+12], &dr.gbtword)
+	data := dr.event.Data()[pos : pos+12]
+	// copy(dr.gbt[0:4], data[8:12])
+	// copy(dr.gbt[4:8], data[4:8])
+	// copy(dr.gbt[8:10], data[0:2])
+	dr.Data2GBTHelper(dr.gbt, data)
+	// dr.gbt[0] = data[8]
+	// dr.gbt[1] = data[9]
+	// dr.gbt[2] = data[10]
+	// dr.gbt[3] = data[11]
+	// dr.gbt[4] = data[4]
+	// dr.gbt[5] = data[5]
+	// dr.gbt[6] = data[6]
+	// dr.gbt[7] = data[7]
+	// dr.gbt[8] = data[0]
+	// dr.gbt[9] = data[1]
 	dr.ngbt++
+}
+
+func (dr *DateReader) NofEvents() int {
+	return dr.nevents
+}
+
+func (dr *DateReader) NofGBTwords() int {
+	return dr.ngbt
 }
 
 func (dr *DateReader) mustFillHeader() {

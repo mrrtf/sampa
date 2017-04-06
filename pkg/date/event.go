@@ -71,6 +71,13 @@ func (event *EventType) Data() []byte {
 	return event.payload[40:]
 }
 
+func (event *EventType) Data3(pos int) []byte {
+	if !event.HasPayload() {
+		return nil
+	}
+	return event.payload[pos+40 : pos+52]
+}
+
 func (event *EventType) HasPayload() bool {
 	return event.header.EventSize > headerSize &&
 		(len(event.payload) > 40)

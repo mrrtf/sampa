@@ -1,22 +1,3 @@
-// package sampa describes the Sampa data format
-//
-// SampaDataHeader is the fixed length SAMPA header (50 bits)
-//
-//  6 bits hamming code
-//  1 bit parity (odd) of header including hamming
-//  3 bits packet type
-// 10 bits number of 10 bit words in data payload
-//  4 bits hardware address of chip
-//  5 bits channel address
-// 20 bits bunch-crossing counter (40MHz counter)
-//  1 bit parity (odd) of data payload
-//
-// See Also
-//
-// SAMPA Specification document
-// https://svnweb.cern.ch/cern/wsvn/SAMPA/docs/SAMPA%20Specification%20MPW3/sampa.pdf
-// in particular table 2.5
-
 package sampa
 
 import (
@@ -24,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/aphecetche/sampa/pkg/bitset"
+	"github.com/mrrtf/sampa/pkg/bitset"
 )
 
 const (
@@ -44,6 +25,16 @@ const (
 	DPBit            int = 49
 )
 
+// SampaDataHeader is the fixed length SAMPA header (50 bits)
+//
+//  6 bits hamming code
+//  1 bit parity (odd) of header including hamming
+//  3 bits packet type
+// 10 bits number of 10 bit words in data payload
+//  4 bits hardware address of chip
+//  5 bits channel address
+// 20 bits bunch-crossing counter (40MHz counter)
+//  1 bit parity (odd) of data payload
 type SampaDataHeader struct {
 	bitset.BitSet
 }
