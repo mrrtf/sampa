@@ -25,6 +25,7 @@ In the DATE payload, each GBT word (80bits) is coded in 3 DATE words
 
 +++
 
+words | comment
 --------------------------------- | --------------------
 00180034 00000011 00000001 00000000 00000000 00000000 00000004 | 7 words added by the software 
 00000000 00000000 00000001 | SOP (required)
