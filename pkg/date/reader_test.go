@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	NBENCH   = 50
-	NTEST    = 10000000
-	TESTFILE = "/Users/laurent/o2/sampa/syn_then_trig_20170210_1833"
+	NBENCH = 50
+	NTEST  = 10000000
+	// TESTFILE = "/Users/laurent/o2/sampa/syn_then_trig_20170210_1833"
+	TESTFILE = "/Users/laurent/o2/sampa/20170414_1121_3to0_21_05_10_12_fw316"
 )
 
 func timeTrack(start time.Time, name string) {

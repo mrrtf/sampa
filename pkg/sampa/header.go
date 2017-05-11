@@ -184,4 +184,5 @@ func init() {
 	}
 	fmt.Printf("SYNC is assumed to be %X = %s ; count=%d\n", SyncPattern.Uint64(0, -1),
 		SyncPattern.String(), SyncPattern.Count())
+	fmt.Printf("SYNC R to L : %s\n", SyncPattern.StringLSBRight())
 }

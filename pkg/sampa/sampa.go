@@ -13,24 +13,27 @@ var (
 type ELink interface {
 	Append(bit0, bit1 bool) ([]Cluster, error)
 	Clear()
+	ForceClear()
+	IsEmpty() bool
 }
 
 const (
 	HeaderSize int = 50
 	// nBitsPerChannel is the number of bits a channel uses in a 80-bits GBT word
 	nBitsPerChannel int = 2
+	nBytesPerGBT    int = 10
 )
 
 // Dispatch splits the 10 bytes composing a 80 bits GBT word
 // into n elink data groups of 80/n bits
 func Dispatch(bytes []byte, elinks []ELink) error {
-	if len(bytes) != 10 {
+	if len(bytes) != nBytesPerGBT {
 		return ErrIncorrectSize
 	}
 	elink := 0
-	for i := 0; i < 1; i++ { //FIXME: 1 should be len(bytes)=10
+	for i := 0; i < 1; i++ { //FIXME: 1 should be len(bytes)=10=nBytesPerGBT
 		b := uint(bytes[i])
-		for j := uint(0); j < 4; j++ {
+		for j := uint(0); j < 1; j++ { //FIXME: 1 should be 8/nBitsPerChannel
 			ch := elinks[elink]
 			elink++
 			mask := uint(1) << (j + 1)

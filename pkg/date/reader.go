@@ -17,13 +17,13 @@ var (
 )
 
 const (
-	magic              uint32 = 0xDA1E5AFE
-	readingBufferSize         = 1024 * 1024 * 1024
-	maxEventBufferSize        = 1024 * 1024
+	magic            uint32 = 0xDA1E5AFE
+	nDateWordsPerGBT        = 4 // 4 x 32 bits words
+	nDateBytesPerGBT        = 4 * nDateWordsPerGBT
 )
 
 // DateReader is meant to read GBT words from a DATE
-// file. It is implementing the gbt.GBT interface
+// file.
 type DateReader struct {
 	r     io.Reader
 	event *EventType
@@ -34,6 +34,7 @@ type DateReader struct {
 	header  EventHeaderType
 	nevents int
 	ngbt    int
+	ngbt2go int
 }
 
 // NewReader returns a DateReader object ready
@@ -44,8 +45,10 @@ func NewReader(filename string) *DateReader {
 		log.Println(err)
 		return nil
 	}
-	return &DateReader{r: bufio.NewReaderSize(file, readingBufferSize), event: NewEvent(), pos: -1, gbt: make([]byte, 10), headBuf: make([]byte, headerSize), nevents: 0, ngbt: 0}
+	return &DateReader{r: bufio.NewReader(file), event: NewEvent(), pos: -1, gbt: make([]byte, 10), headBuf: make([]byte, headerSize), nevents: 0, ngbt: 0}
 }
+
+var gbtcount int = 0
 
 // Read reads 10 bytes from the underlying stream
 // FIXME: this is not really satisfying the Read interface
@@ -61,9 +64,12 @@ func (dr *DateReader) Read(p []byte) (n int, err error) {
 		}
 		if err == nil {
 			copy(p, dr.gbt)
+			gbtcount++
+			// fmt.Printf("GBT word %d = %s\n", gbtcount, dr.GBTAsString())
 			return len(dr.gbt), nil
 		}
 		if err == ErrEndOfEvent {
+			gbtcount = 0
 			return 0, err
 		}
 	}
@@ -81,33 +87,50 @@ func (dr *DateReader) NextGBT() (err error) {
 		if err != nil {
 			return err
 		}
-		dr.nevents++
 		// log.Println(dr)
 		if !dr.event.HasPayload() {
 			// skip to next event
-			// log.Println("Event without payload. Skipping")
+			log.Println("Event without payload. Skipping")
 			return ErrEmptyEvent
 		}
 		_, err := dr.event.SOP()
 		if err != nil {
 			// invalid SOP, skip to next event
-			// log.Println("Event with invalid SOP. Skipping")
+			log.Println("Event with invalid SOP. Skipping")
 			return ErrInvalidSOP
 		}
 		dr.pos = 0
-		dr.ngbt++
+		dr.ngbt = 0
 		// log.Printf("SOE %d len of data %d size %d", dr.event.Header().EventID,
 		// 	len(dr.event.Data()), dr.event.size)
 	}
-	if dr.pos+3 >= dr.event.size {
+
+	endOfEvent := dr.pos+nDateWordsPerGBT >= dr.event.size-equipmentHeaderSize-2*nDateBytesPerGBT
+
+	gbtDone := dr.ngbt == dr.ngbt2go
+
+	// FIXME? the ngbt2go variable is not really needed
+	// was just to check that the endOfEvent condition
+	// was properly computed.
+
+	if gbtDone != endOfEvent {
+		log.Fatal("dr.pos=", dr.pos, " dr.ngbt=", dr.ngbt, " dr.ngbt2go", dr.ngbt2go, " dr.event.size=", dr.event.size)
+	}
+
+	if endOfEvent {
+		// log.Println("EOE reached. Going to next event")
+		dr.pos = -1
+		return ErrEndOfEvent
+	}
+
+	if gbtDone {
 		// log.Println("EOE reached. Going to next event")
 		dr.pos = -1
 		return ErrEndOfEvent
 	}
 
 	dr.Data2GBT(dr.pos)
-	// log.Println("GBT from data=", dr.gbtword.StringLSBRight())
-	dr.pos += 3 * 4
+	dr.pos += nDateBytesPerGBT
 
 	if len(dr.gbt) != 10 {
 		log.Fatal("dr.gbt is not of size 10")
@@ -116,36 +139,33 @@ func (dr *DateReader) NextGBT() (err error) {
 }
 
 func (dr *DateReader) Data2GBTHelper(gbt []byte, data []byte) {
-	gbt[0] = data[8]
-	gbt[1] = data[9]
-	gbt[2] = data[10]
-	gbt[3] = data[11]
-	gbt[4] = data[4]
-	gbt[5] = data[5]
-	gbt[6] = data[6]
-	gbt[7] = data[7]
-	gbt[8] = data[0]
-	gbt[9] = data[1]
+	gbt[0] = data[8+4]
+	gbt[1] = data[9+4]
+	gbt[2] = data[10+4]
+	gbt[3] = data[11+4]
+	gbt[4] = data[4+4]
+	gbt[5] = data[5+4]
+	gbt[6] = data[6+4]
+	gbt[7] = data[7+4]
+	gbt[8] = data[0+4]
+	gbt[9] = data[1+4]
+	// gbt[0] = data[8]
+	// gbt[1] = data[9]
+	// gbt[2] = data[10]
+	// gbt[3] = data[11]
+	// gbt[4] = data[4]
+	// gbt[5] = data[5]
+	// gbt[6] = data[6]
+	// gbt[7] = data[7]
+	// gbt[8] = data[0]
+	// gbt[9] = data[1]
 }
 
 // Data2GBT converts 3 32-bits (DATE) words into a 80-bits GBT word
 // represented by a slice of 10 bytes
 func (dr *DateReader) Data2GBT(pos int) {
-	data := dr.event.Data()[pos : pos+12]
-	// copy(dr.gbt[0:4], data[8:12])
-	// copy(dr.gbt[4:8], data[4:8])
-	// copy(dr.gbt[8:10], data[0:2])
+	data := dr.event.Data()[pos : pos+nDateBytesPerGBT]
 	dr.Data2GBTHelper(dr.gbt, data)
-	// dr.gbt[0] = data[8]
-	// dr.gbt[1] = data[9]
-	// dr.gbt[2] = data[10]
-	// dr.gbt[3] = data[11]
-	// dr.gbt[4] = data[4]
-	// dr.gbt[5] = data[5]
-	// dr.gbt[6] = data[6]
-	// dr.gbt[7] = data[7]
-	// dr.gbt[8] = data[0]
-	// dr.gbt[9] = data[1]
 	dr.ngbt++
 }
 
@@ -182,7 +202,16 @@ func (dr *DateReader) mustFillHeader() {
 	}
 }
 
-// GetNextEvent returns the next DATE event found
+// insure we only have one equipment,
+// as this is the only thing we can deal with so far
+func (dr *DateReader) mustHaveOnlyOneEquipment() {
+	eqSize := binary.LittleEndian.Uint32(dr.event.payload[:4])
+	if eqSize != uint32(dr.event.size) {
+		log.Fatal(eqSize, "!=", uint32(dr.event.size)+headerSize)
+	}
+}
+
+// GetNextEvent gets the next DATE event found
 func (dr *DateReader) GetNextEvent() (err error) {
 	n, err := dr.r.Read(dr.headBuf)
 	if err != nil {
@@ -191,6 +220,8 @@ func (dr *DateReader) GetNextEvent() (err error) {
 	if n != int(headerSize) {
 		log.Fatalf("Read %d bytes and not %d as expected", n, headerSize)
 	}
+
+	dr.nevents++
 
 	dr.mustFillHeader()
 	dr.event.OnlyHeader(dr.header)
@@ -201,9 +232,10 @@ func (dr *DateReader) GetNextEvent() (err error) {
 	}
 
 	ndatabytes := int(dr.header.EventSize - headerSize)
-	n, err = dr.r.Read(dr.event.payload[:ndatabytes])
+	n, err = io.ReadFull(dr.r, dr.event.payload[:ndatabytes])
 
 	if n != ndatabytes {
+		log.Println(err)
 		log.Fatalf("Could only read %d out of %d bytes expected", n, ndatabytes)
 	}
 	if err != nil {
@@ -212,6 +244,11 @@ func (dr *DateReader) GetNextEvent() (err error) {
 	}
 
 	dr.event.size = ndatabytes
+
+	dr.mustHaveOnlyOneEquipment()
+
+	// compute the number of GBT words we will have to read in
+	dr.ngbt2go = (ndatabytes - equipmentHeaderSize - 2*nDateBytesPerGBT /* sop+eop */) / nDateBytesPerGBT
 
 	return nil
 }
@@ -222,6 +259,14 @@ func (dr *DateReader) String() string {
 	v += fmt.Sprintf(" and %d GBT words. Pos %d\n", dr.ngbt, dr.pos)
 	v += fmt.Sprintf("Last known event is :")
 	v += fmt.Sprintf(dr.event.String())
+	return v
+}
+
+func (dr *DateReader) GBTAsString() string {
+	v := ""
+	for b := 0; b < len(dr.gbt); b++ {
+		v += fmt.Sprintf("%0x ", dr.gbt[b])
+	}
 	return v
 }
 
