@@ -19,6 +19,7 @@ var flagNoColor bool
 var flagCpuProfile string
 var flagMemProfile string
 var flagMaxEvents int
+var flagNoDispatch bool
 
 var NumberOfProcessedEvents int = 0
 var elinks []sampa.ELink
@@ -39,6 +40,7 @@ func init() {
 	flag.BoolVar(&flagNoColor, "no-color", false, "Disable color output")
 	flag.StringVar(&flagCpuProfile, "cpuprofile", "", "write cpu profile to file")
 	flag.StringVar(&flagMemProfile, "memprofile", "", "write memory profile to this file")
+	flag.BoolVar(&flagNoDispatch, "no-dispatch", false, "Disable GBT to elink dispatching")
 	log.SetFlags(log.Llongfile)
 	// log.SetOutput(ioutil.Discard)
 }
@@ -78,27 +80,40 @@ func main() {
 		if flagMaxEvents > 0 && r.NofEvents() >= flagMaxEvents {
 			break
 		}
+
 		n, err := r.Read(ten)
+
 		if err != nil {
+
 			if err == io.EOF {
 				break
 			}
 			if err == date.ErrEndOfEvent {
-				// fmt.Println(r)
-				for _, e := range elinks {
-					e.Clear()
-				}
+				// fmt.Println("End of event.")
+				// fmt.Println("Situation of elinks @end of event")
+				// dumpElinks(elinks)
+
+				// for _, e := range elinks {
+				// 	e.ForceClear()
+				// }
+				fmt.Println(r)
 				continue
 			}
 			log.Fatal(err)
 		}
+
 		if n != 10 {
 			log.Fatalf("Could not read the expected 10 bytes, but %d ones", n)
 		}
 		if len(ten) != n {
 			log.Fatalf("inconsistent slice returned : size is %d while I was expecting %d", len(ten), n)
 		}
+		if flagNoDispatch {
+			continue
+		}
+
 		err = sampa.Dispatch(ten, elinks)
+
 		if err != nil {
 			log.Printf("ten size is %d", len(ten))
 			log.Fatal(err)
@@ -112,5 +127,15 @@ func main() {
 			f.Close()
 			return
 		}
+	}
+}
+
+func dumpElinks(elinks []sampa.ELink) {
+	for i := 0; i < len(elinks); i++ {
+		e := elinks[i]
+		if !e.IsEmpty() {
+			fmt.Println("elink ", i, e)
+		}
+		i++
 	}
 }

@@ -14,6 +14,7 @@ type elink struct {
 	checkpoint int
 	indata     bool
 	nsync      int
+	sdh        SampaDataHeader
 }
 
 func NewELink() *elink {
@@ -21,44 +22,61 @@ func NewELink() *elink {
 }
 
 func (p *elink) String() string {
-	return fmt.Sprintf("len %d checkpoint %d indata %v nsync %d",
-		p.Length(), p.checkpoint, p.indata, p.nsync)
+	return fmt.Sprintf("len %d checkpoint %d indata %v nsync %d %s",
+		p.Length(), p.checkpoint, p.indata, p.nsync, p.BitSet.StringLSBRight())
 }
 
-// Append adds two bits at the end of the bitset.
+// Append adds 1 bit at the end of the bitset.
 // If the resulting bitset's length reaches the checkpoint
 // then the bitset is further processed by the Process method
-func (p *elink) Append(bit0, bit1 bool) ([]Cluster, error) {
-	err := p.BitSet.Append(bit0)
+func (p *elink) AppendBit(bit bool) ([]Cluster, error) {
+	err := p.BitSet.Append(bit)
 	if err != nil {
 		return nil, err
 	}
-	err = p.BitSet.Append(bit1)
-	if err != nil {
-		return nil, err
-	}
-	// fmt.Println(p)
 	if p.Length() != p.checkpoint {
 		return nil, nil
 	}
 	return p.Process(), nil
 }
 
-func (p *elink) checkSync() {
+// Append adds two bits at the end of the bitset.
+// If the resulting bitset's length reaches the checkpoint
+// then the bitset is further processed by the Process method
+func (p *elink) Append(bit0, bit1 bool) ([]Cluster, error) {
+	clusters0, err := p.AppendBit(bit0)
+	if err != nil {
+		return nil, err
+	}
+	clusters1, err := p.AppendBit(bit1)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(clusters0, clusters1...), nil
+}
+
+// findSync tries to find a sync word in the last 50
+// bits of the current elink bitset.
+func (p *elink) findSync() {
 	if p.nsync != 0 {
 		panic("wrong logic 2")
 	}
 	if p.indata == true {
 		panic("wrong logic 3")
 	}
+
 	sdh := SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
+
 	if !sdh.IsEqual(SyncPattern.BitSet) {
-		p.checkpoint += nBitsPerChannel
+		p.checkpoint++
 		return
 	}
 	if sdh.PKT() != uint8(SyncPKT) {
 		log.Fatal("something's really wrong : a sync packet MUST have the correct packet type !")
 	}
+
+	log.Println("findSync: found sync", p.nsync)
 	p.Clear()
 	p.checkpoint = HeaderSize
 	p.nsync++
@@ -69,7 +87,6 @@ func (p *elink) checkSync() {
 // If it's neither, then set the checkpoint at
 // the current length + 2 bits
 func (p *elink) Process() []Cluster {
-	// fmt.Printf("===> Process %s\n", p.String())
 	if p.Length() != p.checkpoint {
 		panic("wrong logic somewhere")
 	}
@@ -77,14 +94,15 @@ func (p *elink) Process() []Cluster {
 	// first things first : we must find the sync pattern, otherwise
 	// just continue
 	if p.nsync == 0 {
-		p.checkSync()
+		p.findSync()
 		return nil
 	}
 
 	if p.indata {
 		// data mode, just decode ourselves into
 		// a set of sample clusters
-		log.Fatal("in data !")
+		// log.Fatal("in data !")
+		log.Println("will decode - length=", p.Length())
 		clusters := p.Decode()
 		p.Clear()
 		p.checkpoint = HeaderSize
@@ -97,24 +115,30 @@ func (p *elink) Process() []Cluster {
 		panic(fmt.Sprintf("wrong logic 5 checkpoint %d HeaderSize %d", p.checkpoint, HeaderSize))
 	}
 
-	sdh := SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
-	fmt.Println(sdh.StringAnnotated("\n"))
-	switch uint(sdh.PKT()) {
+	p.sdh = SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
+	// fmt.Println(sdh.StringAnnotated("\n"))
+	switch uint(p.sdh.PKT()) {
 	case DataPKT:
-		log.Fatal("DATA PACKET")
-		fmt.Println(sdh.StringAnnotated("\n"))
-		dataToGo := sdh.NumWords()
-		fmt.Println(dataToGo, " 10-bits words to read")
+		fmt.Println("DATA:", p.sdh.StringAnnotated("\n"))
+		// log.Fatal("YEP")
+		dataToGo := p.sdh.NumWords()
+		fmt.Println(">>>", dataToGo, " 10-bits words to read")
+		fmt.Println("ELINK:", p)
 		p.Clear()
 		p.checkpoint = int(dataToGo * 10)
 		p.indata = true
 		return nil
-	case HeartBeatPKT:
-		log.Println("HEARBEAT found. Should be do sth about it ?")
-		fallthrough
 	case SyncPKT:
 		p.nsync++
-		fallthrough
+		log.Println("found sync ", p.nsync)
+		p.Clear()
+		p.checkpoint = HeaderSize
+		return nil
+	case HeartBeatPKT:
+		log.Println("HEARTBEAT found. Should be do sth about it ?")
+		p.Clear()
+		p.checkpoint = HeaderSize
+		return nil
 	default:
 		p.Clear()
 		p.checkpoint = HeaderSize
@@ -138,12 +162,28 @@ func (p *elink) Clear() {
 	p.BitSet.Clear()
 }
 
+func (p *elink) ForceClear() {
+	if p.indata {
+		return
+	}
+	p.nsync = 0
+	p.Clear()
+	p.indata = false
+}
+
+// Decode returns a slice of SAMPA Cluster (cluster in the sense of
+// set of ADC values).
 func (p *elink) Decode() []Cluster {
 	tb := p.Split()
 	fmt.Println("Decode : slice size=", len(tb))
 	for _, t := range tb {
-		fmt.Printf("%v ", t)
+		fmt.Printf("[%v] ", t)
 	}
 	fmt.Println()
+	// TODO: each cluster must contain Hadd and CHadd from p.Hadd and p.CHadd
 	return nil
+}
+
+func (p *elink) IsEmpty() bool {
+	return p.Length() == 0
 }

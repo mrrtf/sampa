@@ -21,16 +21,16 @@ Is described in [Filippo's gitlab](https://gitlab.cern.ch/costaf/grorc)
 
 +++
 
-In the DATE payload, each GBT word (80bits) is coded in 3 DATE words
+In the DATE payload, each GBT word (80bits) is coded in 4 DATE words
 
 +++
 
 words | comment
 --------------------------------- | --------------------
-00180034 00000011 00000001 00000000 00000000 00000000 00000004 | 7 words added by the software 
-00000000 00000000 00000001 | SOP (required)
-0x0000[79:64] GBT[63:32] GBT[31:0] | first GBT word
-0x0000[79:64] GBT[63:32] GBT[31:0] | second GBT word
+[32bits] x 7 | 7 words added by the software (fake equipment header) 
+00000000 00000000 00000000 00000001 | SOP (required)
+0x0[127:96] 0x0[95:64] GBT[63:32] GBT[31:0] | first GBT word
+0x0[127:96] 0x0[95:64] GBT[63:32] GBT[31:0] | second GBT word
 ... | ... 
-00000000 00000000 00000001 | EOP (optional)
+00000000 00000000 00000000 0000XXXX | EOP (optional)
 

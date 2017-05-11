@@ -34,14 +34,29 @@ type EventHeaderType struct {
 	TimeStampMicroSec uint32    //   76:80
 }
 
+type EquipmentHeaderType struct {
+	Size       uint32    // [ 0: 4[
+	Type       uint32    //   4: 8
+	Id         uint32    //   8:12
+	Attributes [3]uint32 //  12:24
+	ElemSize   uint32    //  24:28
+}
+
 var headerSize uint32
+var equipmentHeaderSize int
 
 func init() {
 	var h EventHeaderType
+	var he EquipmentHeaderType
 	headerSize = uint32(binary.Size(h))
+	equipmentHeaderSize = binary.Size(he)
+	if equipmentHeaderSize != 28 {
+		log.Fatal("oups equipmentHeaderSize=", equipmentHeaderSize)
+	}
 }
 
 // EventType is a simple DATE event = header + payload
+// TODO: should be more = header + { equipmentHeader,payload }
 type EventType struct {
 	header  EventHeaderType
 	payload []byte
@@ -68,38 +83,31 @@ func (event *EventType) Data() []byte {
 	if !event.HasPayload() {
 		return nil
 	}
-	return event.payload[40:]
-}
-
-func (event *EventType) Data3(pos int) []byte {
-	if !event.HasPayload() {
-		return nil
-	}
-	return event.payload[pos+40 : pos+52]
+	return event.payload[equipmentHeaderSize+nDateBytesPerGBT:]
 }
 
 func (event *EventType) HasPayload() bool {
 	return event.header.EventSize > headerSize &&
-		(len(event.payload) > 40)
+		(len(event.payload) > equipmentHeaderSize+nDateBytesPerGBT)
 }
 
-// Triplets converts the bytes starting at payload[pos]
-// into 3 32-bits values
-func (event *EventType) triplet(pos int) (uint32, uint32, uint32) {
-	x := event.payload[pos : pos+12]
-	return binary.LittleEndian.Uint32(x[0:4]), binary.LittleEndian.Uint32(x[4:8]), binary.LittleEndian.Uint32(x[8:12])
+// Quartets converts the bytes starting at payload[pos]
+// into 4 32-bits values
+func (event *EventType) quartet(pos int) (uint32, uint32, uint32, uint32) {
+	x := event.payload[pos : pos+16]
+	return binary.LittleEndian.Uint32(x[0:4]), binary.LittleEndian.Uint32(x[4:8]), binary.LittleEndian.Uint32(x[8:12]), binary.LittleEndian.Uint32(x[12:16])
 }
 
-// start of packet (SOP = 0x000000000000000000000001)
+// start of packet (SOP = 0x000000000000000000000000000001)
 func (event *EventType) SOP() ([]byte, error) {
 	if !event.HasPayload() {
 		return nil, nil
 	}
-	a, b, c := event.triplet(28)
-	if a != 0 || b != 0 || c != 1 {
-		return event.payload[28:40], errors.New(fmt.Sprintf("unexpected sop %08X %08X %08X", a, b, c))
+	a, b, c, d := event.quartet(28)
+	if a != 0 || b != 0 || c != 0 || d != 1 {
+		return event.payload[28:44], errors.New(fmt.Sprintf("unexpected sop %08X %08X %08X %08X", a, b, c, d))
 	}
-	return event.payload[28:40], nil
+	return event.payload[28:44], nil
 }
 
 func (h EventHeaderType) String() string {
@@ -163,13 +171,14 @@ func (event *EventType) String() string {
 
 	if event.HasPayload() {
 		sop, err := event.SOP()
-		v += blue("SOP ") + StringPerLine(sop, 3)
+		v += blue("SOP ") + StringPerLine(sop, 4)
 		if err != nil {
 			nbadsop++
 			if nbadsop > 10 {
 				log.Fatal(err)
 			}
 		}
+		// v += blue("DATA\n") + StringPerLine(event.Data()[:16*5], 4)
 	}
 	return v
 }
