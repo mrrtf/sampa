@@ -29,7 +29,7 @@ func (p *elink) String() string {
 // Append adds 1 bit at the end of the bitset.
 // If the resulting bitset's length reaches the checkpoint
 // then the bitset is further processed by the Process method
-func (p *elink) AppendBit(bit bool) ([]Cluster, error) {
+func (p *elink) AppendBit(bit bool) (*Packet, error) {
 	err := p.BitSet.Append(bit)
 	if err != nil {
 		return nil, err
@@ -41,19 +41,23 @@ func (p *elink) AppendBit(bit bool) ([]Cluster, error) {
 }
 
 // Append adds two bits at the end of the bitset.
-// If the resulting bitset's length reaches the checkpoint
-// then the bitset is further processed by the Process method
-func (p *elink) Append(bit0, bit1 bool) ([]Cluster, error) {
-	clusters0, err := p.AppendBit(bit0)
+func (p *elink) Append(bit0, bit1 bool) (*Packet, error) {
+	packet0, err := p.AppendBit(bit0)
 	if err != nil {
 		return nil, err
 	}
-	clusters1, err := p.AppendBit(bit1)
+	packet1, err := p.AppendBit(bit1)
 	if err != nil {
 		return nil, err
 	}
 
-	return append(clusters0, clusters1...), nil
+	if packet1 != nil && packet0 != nil {
+		log.Fatal("only one of the two AppendBit method should have returned a packet!!!")
+	}
+	if packet1 != nil {
+		return packet1, nil
+	}
+	return packet0, nil
 }
 
 // findSync tries to find a sync word in the last 50
@@ -86,7 +90,7 @@ func (p *elink) findSync() {
 // as either a Sampa header or Sampa data
 // If it's neither, then set the checkpoint at
 // the current length + 2 bits
-func (p *elink) Process() []Cluster {
+func (p *elink) Process() *Packet {
 	if p.Length() != p.checkpoint {
 		panic("wrong logic somewhere")
 	}
@@ -100,14 +104,12 @@ func (p *elink) Process() []Cluster {
 
 	if p.indata {
 		// data mode, just decode ourselves into
-		// a set of sample clusters
-		// log.Fatal("in data !")
-		log.Println("will decode - length=", p.Length())
-		clusters := p.Decode()
+		// a set of sampa packets
+		packet := p.GetPacket()
 		p.Clear()
 		p.checkpoint = HeaderSize
 		p.indata = false
-		return clusters
+		return &packet
 	}
 
 	// looking for a header
@@ -116,21 +118,15 @@ func (p *elink) Process() []Cluster {
 	}
 
 	p.sdh = SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
-	// fmt.Println(sdh.StringAnnotated("\n"))
 	switch uint(p.sdh.PKT()) {
 	case DataPKT:
-		fmt.Println("DATA:", p.sdh.StringAnnotated("\n"))
-		// log.Fatal("YEP")
 		dataToGo := p.sdh.NumWords()
-		fmt.Println(">>>", dataToGo, " 10-bits words to read")
-		fmt.Println("ELINK:", p)
 		p.Clear()
 		p.checkpoint = int(dataToGo * 10)
 		p.indata = true
 		return nil
 	case SyncPKT:
 		p.nsync++
-		log.Println("found sync ", p.nsync)
 		p.Clear()
 		p.checkpoint = HeaderSize
 		return nil
@@ -171,17 +167,19 @@ func (p *elink) ForceClear() {
 	p.indata = false
 }
 
-// Decode returns a slice of SAMPA Cluster (cluster in the sense of
-// set of ADC values).
-func (p *elink) Decode() []Cluster {
+// Decode returns a SAMPA Packet
+func (p *elink) GetPacket() Packet {
 	tb := p.Split()
-	fmt.Println("Decode : slice size=", len(tb))
-	for _, t := range tb {
-		fmt.Printf("[%v] ", t)
+	i := 0
+	packet := Packet{sdh: p.sdh}
+	for i < len(tb) {
+		nwords := tb[i]
+		timestamp := tb[i+1]
+		packet.AddCluster(timestamp, tb[i+2:i+2+nwords])
+		i += nwords + 2
 	}
-	fmt.Println()
-	// TODO: each cluster must contain Hadd and CHadd from p.Hadd and p.CHadd
-	return nil
+	return packet
+
 }
 
 func (p *elink) IsEmpty() bool {

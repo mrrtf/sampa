@@ -89,14 +89,6 @@ func main() {
 				break
 			}
 			if err == date.ErrEndOfEvent {
-				// fmt.Println("End of event.")
-				// fmt.Println("Situation of elinks @end of event")
-				// dumpElinks(elinks)
-
-				// for _, e := range elinks {
-				// 	e.ForceClear()
-				// }
-				fmt.Println(r)
 				continue
 			}
 			log.Fatal(err)

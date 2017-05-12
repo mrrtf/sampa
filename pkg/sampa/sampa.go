@@ -11,7 +11,7 @@ var (
 )
 
 type ELink interface {
-	Append(bit0, bit1 bool) ([]Cluster, error)
+	Append(bit0, bit1 bool) (*Packet, error)
 	Clear()
 	ForceClear()
 	IsEmpty() bool
@@ -40,12 +40,12 @@ func Dispatch(bytes []byte, elinks []ELink) error {
 			bit0 := (b & mask) > 0
 			mask /= 2
 			bit1 := (b & mask) > 0
-			clusters, err := ch.Append(bit0, bit1)
+			packet, err := ch.Append(bit0, bit1)
 			if err != nil {
 				log.Fatalf("Dispatch error : byte %d elink %d", b, i)
 			}
-			if len(clusters) > 0 {
-				fmt.Println(clusters)
+			if packet != nil {
+				fmt.Println(packet.String())
 			}
 		}
 	}
