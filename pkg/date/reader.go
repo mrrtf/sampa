@@ -34,7 +34,6 @@ type DateReader struct {
 	header  EventHeaderType
 	nevents int
 	ngbt    int
-	ngbt2go int
 }
 
 // NewReader returns a DateReader object ready
@@ -100,30 +99,13 @@ func (dr *DateReader) NextGBT() (err error) {
 			return ErrInvalidSOP
 		}
 		dr.pos = 0
-		dr.ngbt = 0
 		// log.Printf("SOE %d len of data %d size %d", dr.event.Header().EventID,
 		// 	len(dr.event.Data()), dr.event.size)
 	}
 
 	endOfEvent := dr.pos+nDateWordsPerGBT >= dr.event.size-equipmentHeaderSize-2*nDateBytesPerGBT
 
-	gbtDone := dr.ngbt == dr.ngbt2go
-
-	// FIXME? the ngbt2go variable is not really needed
-	// was just to check that the endOfEvent condition
-	// was properly computed.
-
-	if gbtDone != endOfEvent {
-		log.Fatal("dr.pos=", dr.pos, " dr.ngbt=", dr.ngbt, " dr.ngbt2go", dr.ngbt2go, " dr.event.size=", dr.event.size)
-	}
-
 	if endOfEvent {
-		// log.Println("EOE reached. Going to next event")
-		dr.pos = -1
-		return ErrEndOfEvent
-	}
-
-	if gbtDone {
 		// log.Println("EOE reached. Going to next event")
 		dr.pos = -1
 		return ErrEndOfEvent
@@ -246,9 +228,6 @@ func (dr *DateReader) GetNextEvent() (err error) {
 	dr.event.size = ndatabytes
 
 	dr.mustHaveOnlyOneEquipment()
-
-	// compute the number of GBT words we will have to read in
-	dr.ngbt2go = (ndatabytes - equipmentHeaderSize - 2*nDateBytesPerGBT /* sop+eop */) / nDateBytesPerGBT
 
 	return nil
 }
