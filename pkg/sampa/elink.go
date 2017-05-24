@@ -15,15 +15,19 @@ type elink struct {
 	indata     bool
 	nsync      int
 	sdh        SampaDataHeader
+	id         int
 }
 
-func NewELink() *elink {
-	return &elink{BitSet: *(bitset.New(100000)), checkpoint: HeaderSize, indata: false, nsync: 0}
+func NewELink(id int) *elink {
+	return &elink{id: id, BitSet: *(bitset.New(100000)), checkpoint: HeaderSize, indata: false, nsync: 0}
+}
+
+func (p *elink) Id() int {
+	return p.id
 }
 
 func (p *elink) String() string {
-	return fmt.Sprintf("len %d checkpoint %d indata %v nsync %d %s",
-		p.Length(), p.checkpoint, p.indata, p.nsync, p.BitSet.StringLSBRight())
+	return fmt.Sprintf("ELink %d len %d checkpoint %d indata %v nsync %d %s", p.id, p.Length(), p.checkpoint, p.indata, p.nsync, p.BitSet.StringLSBRight())
 }
 
 // Append adds 1 bit at the end of the bitset.
@@ -80,7 +84,7 @@ func (p *elink) findSync() {
 		log.Fatal("something's really wrong : a sync packet MUST have the correct packet type !")
 	}
 
-	log.Println("findSync: found sync", p.nsync)
+	log.Println("findSync: found sync #", p.nsync, " for elink #", p.id)
 	p.Clear()
 	p.checkpoint = HeaderSize
 	p.nsync++
@@ -118,8 +122,15 @@ func (p *elink) Process() *Packet {
 	}
 
 	p.sdh = SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
+	// fmt.Println("ELink ", p.id, " ", p.sdh.StringAnnotated("-"))
 	switch uint(p.sdh.PKT()) {
+	case DataTruncatedPKT, DataTruncatedTriggerTooEarlyPKT, DataTriggerTooEarlyPKT, DataTriggerTooEarlyNumWordsPKT:
+		// data with a problem is still data, i.e. there will
+		// probably be some data words to read in
+		fallthrough
 	case DataPKT:
+		// log.Println("ELink", p.id, "DATA", p.sdh.StringAnnotated(" "))
+		// log.Println(p)
 		dataToGo := p.sdh.NumWords()
 		p.Clear()
 		p.checkpoint = int(dataToGo * 10)
@@ -131,11 +142,14 @@ func (p *elink) Process() *Packet {
 		p.checkpoint = HeaderSize
 		return nil
 	case HeartBeatPKT:
-		log.Println("HEARTBEAT found. Should be do sth about it ?")
+		log.Printf("ELink #%d : HEARTBEAT found. Should be do sth about it  ?\n", p.id)
+		log.Println(p)
 		p.Clear()
 		p.checkpoint = HeaderSize
 		return nil
 	default:
+		log.Printf("ELink %d Got a PKT=%d\n", p.id, p.sdh.PKT())
+		log.Println(p)
 		p.Clear()
 		p.checkpoint = HeaderSize
 		return nil
@@ -169,9 +183,16 @@ func (p *elink) ForceClear() {
 
 // Decode returns a SAMPA Packet
 func (p *elink) GetPacket() Packet {
+	// log.Printf("ELink %d PKT %d GetPacket\n", p.id, p.sdh.PKT())
+	// log.Println(p.sdh.StringAnnotated(" "))
 	tb := p.Split()
 	i := 0
-	packet := Packet{sdh: p.sdh}
+	packet := Packet{sdh: p.sdh, elink: p.id}
+	// if data is truncated, do not even try to add anything
+	// to the packet
+	if uint(p.sdh.PKT()) != DataPKT {
+		return packet
+	}
 	for i < len(tb) {
 		nwords := tb[i]
 		timestamp := tb[i+1]

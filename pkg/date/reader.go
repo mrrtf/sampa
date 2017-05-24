@@ -25,10 +25,9 @@ const (
 // DateReader is meant to read GBT words from a DATE
 // file.
 type DateReader struct {
-	r     io.Reader
-	event *EventType
-	pos   int
-	// gbtword gbt.Word
+	r       io.Reader
+	event   *EventType
+	pos     int
 	gbt     []byte
 	headBuf []byte
 	header  EventHeaderType
@@ -83,6 +82,7 @@ func (dr *DateReader) NextGBT() (err error) {
 
 	if dr.pos < 0 {
 		err = dr.GetNextEvent()
+		// fmt.Println(dr.event)
 		if err != nil {
 			return err
 		}

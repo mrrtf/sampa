@@ -9,6 +9,7 @@ import "fmt"
 type Packet struct {
 	sdh      SampaDataHeader
 	clusters []Cluster // clusters
+	elink    int
 }
 
 func (p *Packet) AddCluster(timestamp int, samples []int) {
@@ -16,7 +17,7 @@ func (p *Packet) AddCluster(timestamp int, samples []int) {
 }
 
 func (p *Packet) String() string {
-	v := fmt.Sprintf("[%d,%d] ", p.sdh.Hadd(), p.sdh.CHadd())
+	v := fmt.Sprintf("ELink %d Packet [%d,%d] ", p.elink, p.sdh.Hadd(), p.sdh.CHadd())
 
 	for _, c := range p.clusters {
 		m, s := c.MeanSigma()

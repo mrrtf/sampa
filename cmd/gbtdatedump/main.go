@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 
 	"github.com/fatih/color"
@@ -20,7 +21,7 @@ var flagCpuProfile string
 var flagMemProfile string
 var flagMaxEvents int
 var flagNoDispatch bool
-
+var flagMaskELink uint64
 var NumberOfProcessedEvents int = 0
 var elinks []sampa.ELink
 var gbt *bitset.BitSet
@@ -29,7 +30,7 @@ var nextCheckPoint int
 
 func init() {
 	for i := 0; i < 40; i++ {
-		elinks = append(elinks, sampa.NewELink())
+		elinks = append(elinks, sampa.NewELink(i))
 	}
 	log.Println(len(elinks), "elinks created")
 	gbt = bitset.New(80)
@@ -41,11 +42,15 @@ func init() {
 	flag.StringVar(&flagCpuProfile, "cpuprofile", "", "write cpu profile to file")
 	flag.StringVar(&flagMemProfile, "memprofile", "", "write memory profile to this file")
 	flag.BoolVar(&flagNoDispatch, "no-dispatch", false, "Disable GBT to elink dispatching")
+	flag.Uint64Var(&flagMaskELink, "elink-mask", 0, "40 bits mask to describe which elinks to skip in decoding (default none)")
 	log.SetFlags(log.Llongfile)
 	// log.SetOutput(ioutil.Discard)
 }
 
 func main() {
+
+	fmt.Println(runtime.GOMAXPROCS(1))
+
 	flag.Parse()
 	if flagCpuProfile != "" {
 		f, err := os.Create(flagCpuProfile)
@@ -89,11 +94,13 @@ func main() {
 				break
 			}
 			if err == date.ErrEndOfEvent {
+				// fmt.Println("end of event ", r.NofEvents())
 				continue
 			}
 			log.Fatal(err)
 		}
 
+		// fmt.Println("GBT=", r.GBTAsString())
 		if n != 10 {
 			log.Fatalf("Could not read the expected 10 bytes, but %d ones", n)
 		}
@@ -104,7 +111,7 @@ func main() {
 			continue
 		}
 
-		err = sampa.Dispatch(ten, elinks)
+		err = sampa.Dispatch(ten, elinks, flagMaskELink)
 
 		if err != nil {
 			log.Printf("ten size is %d", len(ten))
