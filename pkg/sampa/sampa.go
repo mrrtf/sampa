@@ -16,6 +16,7 @@ type ELink interface {
 	// ForceClear()
 	IsEmpty() bool
 	Id() int
+	Size() int
 }
 
 const (
@@ -32,21 +33,31 @@ func Dispatch(bytes []byte, elinks []ELink, elinkmask uint64) error {
 		return ErrIncorrectSize
 	}
 	var elink uint64 = 0
-	for i := 0; i < 1; i++ { //FIXME: 1 should be len(bytes)=10=nBytesPerGBT
+	nbytes := 1 /*len(bytes)*/
+	// FIXME:
+	// either be fast enough and use len(bytes) whatever the number of sampa per solar is
+	// (i.e. absorb zeros easily),
+	// or use some configuration to know how many sampas are to be read...
+	for i := 0; i < nbytes; i++ {
 		b := uint(bytes[i])
-		for j := uint(0); j < 8; j += nBitsPerChannel { //FIXME:should be 8/nBitsPerChannel
+		for j := uint(0); j < 8; j += nBitsPerChannel {
 			ch := elinks[elink]
+			// fmt.Println("elink(", ch.Id(), ")=", elink, ch.Size())
 			if elinkmask&(uint64(1)<<elink) > 0 {
 				// skip masked-out elinks
 				elink++
 				continue
 			}
+			maskbit0 := uint(1) << (j + 1)
+			bit0 := (b & maskbit0) > 0
+			maskbit1 := uint(1) << j
+			bit1 := (b & maskbit1) > 0
+			// fmt.Println("j=", j, "will append to elink(Id=)", ch.Id(), elink, " of size ", ch.Size(), "using masks ", maskbit0, maskbit1)
 			elink++
-			mask := uint(1) << (j + 1)
-			// fmt.Println("j=", j, "will append to elink ", elink, "using mask", mask, mask/2)
-			bit0 := (b & mask) > 0
-			mask /= 2
-			bit1 := (b & mask) > 0
+			// if ch.IsEmpty() && bit0 == bit1 && bit0 == false {
+			// 	// only start to append bits if there's a 1
+			// 	continue
+			// }
 			packet, err := ch.Append(bit0, bit1)
 			if err != nil {
 				log.Fatalf("Dispatch error : byte %d elink %d", b, i)

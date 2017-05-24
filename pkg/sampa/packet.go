@@ -19,6 +19,10 @@ func (p *Packet) AddCluster(timestamp int, samples []int) {
 func (p *Packet) String() string {
 	v := fmt.Sprintf("ELink %d Packet [%d,%d] ", p.elink, p.sdh.Hadd(), p.sdh.CHadd())
 
+	if len(p.clusters) == 0 {
+		v += "NODATA"
+	}
+
 	for _, c := range p.clusters {
 		m, s := c.MeanSigma()
 		v += fmt.Sprintf("%f +- %f ", m, s)

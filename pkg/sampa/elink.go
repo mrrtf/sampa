@@ -7,6 +7,8 @@ import (
 	"github.com/mrrtf/sampa/pkg/bitset"
 )
 
+const maxELinkSize = 20000
+
 // elink is a bitset with some helper methods to
 // split it into 10-bits ints
 type elink struct {
@@ -19,7 +21,7 @@ type elink struct {
 }
 
 func NewELink(id int) *elink {
-	return &elink{id: id, BitSet: *(bitset.New(100000)), checkpoint: HeaderSize, indata: false, nsync: 0}
+	return &elink{id: id, BitSet: *(bitset.New(maxELinkSize)), checkpoint: HeaderSize, indata: false, nsync: 0}
 }
 
 func (p *elink) Id() int {
@@ -61,6 +63,11 @@ func (p *elink) Append(bit0, bit1 bool) (*Packet, error) {
 	if packet1 != nil {
 		return packet1, nil
 	}
+
+	// // if we are looking for a sync and only getting zeros, just clear
+	// if p.nsync == 0 && p.checkpoint == HeaderSize && p.BitSet.Count() == 0 {
+	// 	p.Clear()
+	// }
 	return packet0, nil
 }
 
@@ -74,6 +81,11 @@ func (p *elink) findSync() {
 		panic("wrong logic 3")
 	}
 
+	if p.Size() > HeaderSize && p.Count() == 0 {
+		p.Clear()
+		return
+	}
+
 	sdh := SampaDataHeader{BitSet: *(p.BitSet.Last(HeaderSize))}
 
 	if !sdh.IsEqual(SyncPattern.BitSet) {
@@ -84,7 +96,7 @@ func (p *elink) findSync() {
 		log.Fatal("something's really wrong : a sync packet MUST have the correct packet type !")
 	}
 
-	log.Println("findSync: found sync #", p.nsync, " for elink #", p.id)
+	log.Println("findSync: found sync #", p.nsync, " for elink #", p.id, " at pos", p.Size())
 	p.Clear()
 	p.checkpoint = HeaderSize
 	p.nsync++
@@ -205,4 +217,8 @@ func (p *elink) GetPacket() Packet {
 
 func (p *elink) IsEmpty() bool {
 	return p.Length() == 0
+}
+
+func (p *elink) Size() int {
+	return p.BitSet.Length()
 }
