@@ -9,5 +9,6 @@ sampa is a Go decoder of Alice MCH Sampa front-end raw data test bench
 # Usage
 
 ```
+cd cmd/gbtdatedump
 rm -rf toto && go install && gbtdatedump -n 10 $HOME/o2/sampa/20170414_1121_3to0_21_05_10_12_fw316 >& toto
 ```
